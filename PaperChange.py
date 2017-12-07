@@ -1,32 +1,39 @@
 import sys
-#import BackChange
-#import PicPicker
 import threading		#Used for letting the GUI still run while new events are scheduled
-import wx			#Used for the GUI
-import time			#Used for determining when to switch wallpapers
+import wx				#Used for the GUI
+import time				#Used for determining when to switch wallpapers
 import sched			#Used to scheduling new events to switch wallpapers
-import os			#Used pretty much everywhere
-import random
-import ctypes
+import os				#Used pretty much everywhere
+import random			#Used in the PicPicker function
+import ctypes			#Used in the BackChange function
 
 class MainWindow(wx.Frame):
 	def __init__(self, parent, title):
 		
 		#Initial selection of a profile
-		profile_list = os.listdir("Profiles")
+		try:
+			profile_list = os.listdir("Profiles")
+		except FileNotFoundError: 
+			os.makedirs("Profiles")
+			profile_list = []
 		if profile_list == []:
-			dlg = wx.TextEntryDialog(None, "Enter the name of your new profile:", "Name the New Profile", style = wx.OK)
-			dlg.ShowModal()
+			dlg = wx.TextEntryDialog(None, "Enter the name of your starting profile:", "Name the Starting Profile")
+			choice = dlg.ShowModal()
+			if choice == wx.ID_CANCEL:
+				self.Destroy()
 			name = dlg.GetValue()
 			dlg.Destroy()
-			dlg = wx.DirDialog(None, "Choose your wallpaper directory:", style = wx.DD_DEFAULT_STYLE)
-			dlg.ShowModal()
+			dlg = wx.DirDialog(None, "Choose your wallpaper directory:", style = wx.DD_DEFAULT_STYLE|wx.DD_DIR_MUST_EXIST)
+			choice = dlg.ShowModal()
+			if choice == wx.ID_CANCEL:
+				self.Destroy()
 			dir = dlg.GetPath()
 			dlg.Destroy()
-			dlg = wx.TextEntryDialog(parent, message = "Enter the frequency of background changes in seconds: ", caption = "Set Frequency", style = wx.OK)
-			dlg.ShowModal()
-			freq = dlg.GetValue()
-			dlg.Destroy()
+			
+			choice = ChangeFrequency("Blank")
+			if choice == wx.ID_CANCEL:
+				self.Destroy()
+			freq = choice[1]
 			created_profile = open("Profiles\\" + name + ".txt", 'w+')
 			created_profile.write(dir + "\n")
 			created_profile.write(freq)
@@ -46,7 +53,7 @@ class MainWindow(wx.Frame):
 		except IndexError:
 			frequency = "0"
 			directory = "PROFILE IS EMPTY"
-		wx.Frame.__init__(self, parent, title=title, size=(1000,400), style = wx.DEFAULT_FRAME_STYLE ^ wx.RESIZE_BORDER)
+		wx.Frame.__init__(self, parent, title=title, size=(-1,450), style = wx.DEFAULT_FRAME_STYLE)
 			
 		#Setting the background color
 		self.SetBackgroundColour(wx.Colour(209,209,209))
@@ -72,7 +79,7 @@ class MainWindow(wx.Frame):
 		#Setting up and adding things to the panel
 		self.panel = wx.Panel(self)
 		
-		self.description = wx.StaticText(self.panel, label="Wallpaper Switcher")
+		self.description = wx.StaticText(self.panel, label="Wallpaper Manager")
 		self.description.Wrap(150)
 		
 		self.profile_name = wx.StaticText(self.panel, label="Profile: "+ self.profile)
@@ -101,7 +108,7 @@ class MainWindow(wx.Frame):
 		self.Bind(wx.EVT_BUTTON, self.OnPreviewButton, self.preview_button)
 		
 		self.icon = wx.StaticBitmap(self.panel, wx.ID_ANY)
-		self.icon.SetBitmap(wx.Bitmap('Untitled.bmp'))
+		self.icon.SetBitmap(wx.Bitmap('Logo.bmp'))
 		
 		#Setting up a vertical sizer
 		self.grid_sizer = wx.GridBagSizer(hgap = 5, vgap = 5)
@@ -131,11 +138,12 @@ class MainWindow(wx.Frame):
 		self.sizer.Add(self.preview_button, 0, wx.CENTER, 5)
 		self.sizer.Add((0,10), 0)
 
-		self.sizer.SetSizeHints(self)
-		self.SetSizer(self.sizer)
+		self.sizer.SetSizeHints(self.panel)
+		self.panel.SetSizer(self.sizer)
 	
 		#Setting the frame to appear
 		self.Show(True)
+		self.SetMinSize(self.GetSize())
 			
 	def OnPath(self, event):
 		#Change path for the current profile, uses the ChangePath() function
@@ -239,22 +247,24 @@ class MainWindow(wx.Frame):
 		self.frequency_button.Disable()
 		self.path_button.Disable()
 		self.start_button.SetLabel("Stop")
+		list = os.listdir(directory)
+		list = [x for x in list if x[-3:] == ".jpg" or ".png" or ".jpeg" or ".bmp"]
 		
 		def Scheduler(directory, frequency):
+			file_used = ''
 			s = sched.scheduler(time.time, time.sleep)
-			def CHANGE(directory, frequency):
+			def CHANGE(directory, frequency, file_used):
 				if self.start_button.GetValue() == True:
-					file_used = ''
-					file = PicPicker(directory, file_used)
+					file = PicPicker(list, file_used)
 					final_path = directory + "\\" + file
 					BackChange(final_path)
 					file_used = file
-					s.enter(frequency, 1, CHANGE, (directory, frequency))
+					s.enter(frequency, 1, CHANGE, (directory, frequency, file_used))
 				else:
 					self.menuBar.EnableTop(0, True)
 					self.start_button.SetLabel("Start Cycling Wallpapers")
 					return
-			s.enter(frequency, 1, CHANGE, (directory, frequency))
+			s.enter(frequency, 1, CHANGE, (directory, frequency, file_used))
 			while self.start_button.GetValue() == True:
 				s.run()
 			else:
@@ -269,11 +279,11 @@ class MainWindow(wx.Frame):
 		t.start()
 		
 	def OnChangeButton(self, event):
-		dlg = wx.FileDialog(self, message = "Choose a Wallpaper:", style = wx.FD_OPEN)
+		dlg = wx.FileDialog(self, message = "Choose a Wallpaper:", wildcard = "Pictures (*.jpg, *.jpeg, *.png, *.bmp)|*.jpg;*.jpeg;*.png;*.bmp", style = wx.FD_OPEN|wx.FD_FILE_MUST_EXIST)
 		choice = dlg.ShowModal()
 		if choice == wx.ID_OK:
 			result = dlg.GetPath()
-			BackChange.BackChange(result)
+			BackChange(result)
 		dlg.Destroy()
 	
 	def OnPreviewButton(self, event):
@@ -300,7 +310,7 @@ def ChangePath(profile, parent = None, message = '', caption = ''):
 	except IndexError:
 		directory = "PATH NOT FOUND"
 		frequency = "0"
-	dlg = wx.DirDialog(parent, message, defaultPath = directory, style = wx.DD_DEFAULT_STYLE)
+	dlg = wx.DirDialog(parent, message, defaultPath = directory, style = wx.DD_DEFAULT_STYLE|wx.DD_DIR_MUST_EXIST)
 	choice = dlg.ShowModal()
 	if choice == wx.ID_OK:
 		result = dlg.GetPath()
@@ -327,7 +337,6 @@ def ChangeFrequency(profile, parent = None):
 			
 			self.ok = wx.Button(self.panel, wx.ID_OK, "OK", size = (-1,-1))
 			self.cancel = wx.Button(self.panel, wx.ID_CANCEL, "Cancel", size = (-1,-1))
-			#self.Bind(wx.EVT_BUTTON, self.OnCancel, self.cancel)
 			
 			self.sizer = wx.BoxSizer(wx.HORIZONTAL)
 			self.over_sizer = wx.BoxSizer(wx.VERTICAL)
@@ -348,17 +357,21 @@ def ChangeFrequency(profile, parent = None):
 			self.SetSizer(self.sizer)
 			
 		def OnInput(self, event):
+		
 			approved = "0123456789"
-			key = event.GetKeyCode() 
-			if chr(key) in approved or key == 13 or key == 314 or key == 316 or key == 8:
+			key_pressed = event.GetKeyCode() 
+			
+			if chr(key_pressed) in approved or key_pressed == wx.WXK_BACK or key_pressed == wx.WXK_RETURN or key_pressed == wx.WXK_DELETE or key_pressed == wx.WXK_LBUTTON or key_pressed == wx.WXK_RBUTTON:
 				event.Skip()
 				return
-				
 			else:
 				return False
-				
-	config = open("Profiles\\" + profile, 'r').read()
-	config = config.splitlines()
+
+	try:
+		config = open("Profiles\\" + profile, 'r').read()
+		config = config.splitlines()
+	except FileNotFoundError:
+		config = ["",""]
 	try:
 		directory = config[0]
 		frequency = config[1]
@@ -390,14 +403,16 @@ def Preview(profile):
 			bmp = wx.Image(result, wx.BITMAP_TYPE_ANY).Scale(scale[0], scale[1]).ConvertToBitmap()
 			self.bitmap = wx.StaticBitmap(self.panel, wx.ID_ANY, bmp)
 			
-			self.prompt = wx.StaticText(self.bitmap, label = "Add the Wallpaper to the Current Profile?", pos = (40,20))
-		
+			self.prompt = wx.StaticText(self.bitmap, label = "Add the Wallpaper to the Current Profile or Delete the Image?", pos = (40,20))
+			#self.d_prompt = wx.StaticText(self.bitmap, label = "Delete the Picture?", pos = (140, 20))
 			self.yes_button = wx.Button(self.bitmap, wx.ID_ANY, "Yes", size = (-1,-1), pos = (55,40))
 			self.no_button = wx.Button(self.bitmap, wx.ID_ANY, "No", size = (-1,-1), pos = (155,40))
+			self.delete_button = wx.Button(self.bitmap, wx.ID_ANY, "Delete", size = (-1,-1), pos = (255, 40))
 			self.Bind(wx.EVT_BUTTON, self.OnYes, self.yes_button)
 			self.Bind(wx.EVT_BUTTON, self.OnNo, self.no_button)
+			self.Bind(wx.EVT_BUTTON, self.OnDelete, self.delete_button)
 		
-			self.box = wx.StaticBox(self.bitmap, wx.ID_ANY, pos = (5,0), size = (300, 75))
+			self.box = wx.StaticBox(self.bitmap, wx.ID_ANY, pos = (5,0), size = (400, 75))
 			
 			self.ShowFullScreen(True)
 	
@@ -411,8 +426,12 @@ def Preview(profile):
 		
 		def OnNo(self, event):
 			self.Destroy()
+			
+		def OnDelete(self, event):
+			os.remove(result)
+			self.Destroy()
 	
-	dlg = wx.FileDialog(None, "Choose an Image:", style = wx.FD_OPEN|wx.FD_FILE_MUST_EXIST)
+	dlg = wx.FileDialog(None, "Choose an Image:", wildcard = "Pictures (*.jpg, *.jpeg, *.png, *.bmp)|*.jpg;*.jpeg;*.png;*.bmp", style = wx.FD_OPEN|wx.FD_FILE_MUST_EXIST)
 	choice = dlg.ShowModal()
 	result = dlg.GetPath()
 	dlg.Destroy()
@@ -430,15 +449,13 @@ def BackChange(src):
 	SPIF_UPDATEINIFILE = 0x2
 	ctypes.windll.user32.SystemParametersInfoW(SPI_SETDESKWALLPAPER, 0, src, SPIF_UPDATEINIFILE)
 	
-def PicPicker(path, file_used):
-	list = os.listdir(path)
+def PicPicker(list, file_used):
 	rand_int = random.randint(0,len(list)-1)
-	if list[rand_int] == file_used:
-		PicPicker(path, file_used)
-	else:
-		return list[rand_int]
+	while list[rand_int] == file_used:
+		rand_int = random.randint(0,len(list)-1)
+	return list[rand_int]
 
 #Starts the application
 app = wx.App(False)
-frame = MainWindow(None, "Wallpaper Switcher")
+frame = MainWindow(None, "Wallpaper Manager")
 app.MainLoop()
