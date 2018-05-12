@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="Docs/preview.png">
+  <img src="Docs/preview.PNG">
  </p>
 
 # Wallpaper Project
